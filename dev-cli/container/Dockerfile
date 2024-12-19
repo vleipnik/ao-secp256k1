@@ -110,6 +110,19 @@ RUN cd /opt/aolibc && make CC="emcc -s WASM=1 -s MEMORY64=1 -s SUPPORT_LONGJMP=1
 ENV CC='emcc -s WASM=1'
 ENV NM='/emsdk/upstream/bin/llvm-nm'
 
+#####
+# Build secp256k1 as a static library for WASM32
+#####
+COPY ./src/secp256k1 /opt/secp256k1
+ENV AR=emar
+ENV RANLIB=emranlib
+RUN apt-get install -y autoconf automake libtool
+RUN cd /opt/secp256k1 && ./autogen.sh
+RUN cd /opt/secp256k1 && emconfigure ./configure --host=wasm64-unknown-emscripten --enable-static --disable-shared --disable-dependency-tracking CC="emcc" CFLAGS="-target wasm64" LDFLAGS="-target wasm64"
+RUN cd /opt/secp256k1 && emmake make FORMAT=wasm
+RUN mkdir -p /opt/secp256k1/.libs
+# COPY ./src/libsecp256k1.a /opt/secp256k1/.libs/libsecp256k1.a
+
 ###########################################
 ### Publish, Bundler, Process, Contract ###
 ###########################################

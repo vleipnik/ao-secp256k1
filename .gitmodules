@@ -1,0 +1,3 @@
+[submodule "dev-cli/container/src/secp256k1"]
+	path = dev-cli/container/src/secp256k1
+	url = git@github.com:bitcoin-core/secp256k1.git

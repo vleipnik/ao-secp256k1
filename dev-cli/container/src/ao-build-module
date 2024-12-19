@@ -126,6 +126,9 @@ def main():
         cmd.extend(['-I', quote('/lua-{}-32/src'.format(os.environ.get('LUA_VERSION')))])
         cmd.extend([quote('/lua-{}-32/src/liblua.a'.format(os.environ.get('LUA_VERSION')))])
 
+    # Include the secp256k1 header file directory
+    cmd.extend(['-I', quote('/opt/secp256k1/include')])
+
     # Link Rust library
     if(language == 'rust'):
         cmd.extend(['-L/opt/aorustlib', '-l:libaorust.a'])
