@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdbool.h>
 
 #include <emscripten.h>
 
@@ -12,10 +15,147 @@
 #include "lauxlib.h"
 #endif
 
+#include "gmp.h"
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+bool compute_mod_exp(const char *base_input, const char *exp_input, const char *mod_input, const char *expected_input) {
+    mpz_t base, exp, mod, large_exp, result, expected;
+    bool match = false;
+
+    // Initialize big integers
+    mpz_init(base);
+    mpz_init(exp);
+    mpz_init(mod);
+    mpz_init(large_exp);
+    mpz_init(result);
+    mpz_init(expected);
+
+    // Set inputs to GMP integers (assume hex without needing 0x prefix)
+    if (mpz_set_str(base, base_input, 16) != 0) {
+        printf("Invalid base input!\n");
+        goto cleanup;
+    }
+
+    if (mpz_set_str(exp, exp_input, 10) != 0) {
+        printf("Invalid exponent input!\n");
+        goto cleanup;
+    }
+
+    if (mpz_set_str(mod, mod_input, 16) != 0 || mpz_cmp_ui(mod, 0) <= 0) {
+        printf("Invalid modulus input or modulus must be positive!\n");
+        goto cleanup;
+    }
+
+    if (expected_input && mpz_set_str(expected, expected_input, 16) != 0) {
+        printf("Invalid expected result input!\n");
+        goto cleanup;
+    }
+
+    // Compute 2^exp
+    mpz_ui_pow_ui(large_exp, 2, mpz_get_ui(exp));
+
+    // Perform modular exponentiation: result = base^(2^exp) % mod
+    mpz_powm(result, base, large_exp, mod);
+
+    // Compare the result with the expected value
+    if (expected_input && mpz_cmp(result, expected) == 0) {
+        match = true;
+    }
+
+cleanup:
+    // Clear memory
+    mpz_clears(base, exp, mod, large_exp, result, expected, NULL);
+    return match;
+}
+
+// Lua wrapper for compute_mod_exp
+int lua_compute_mod_exp(lua_State *L) {
+    // Get parameters from Lua (stack order: base, exponent, modulus, expected)
+    const char *base = luaL_checkstring(L, 1);
+    const char *exp = luaL_checkstring(L, 2);
+    const char *mod = luaL_checkstring(L, 3);
+    const char *expected = luaL_checkstring(L, 4);
+
+    // Call the C function
+    bool result = compute_mod_exp(base, exp, mod, expected);
+
+    // Push the result (boolean) back to Lua
+    lua_pushboolean(L, result);
+    return 1;  // Number of return values
+}
+
+bool check_modulus_result(const char *input, const char *modulus, const char *expected) {
+    mpz_t bint_input, bint_modulus, bint_expected, result;
+    bool match = false;
+
+    // Initialize GMP integers
+    mpz_init(bint_input);
+    mpz_init(bint_modulus);
+    mpz_init(bint_expected);
+    mpz_init(result);
+
+    // Set input and modulus values (assume hex format)
+    if (mpz_set_str(bint_input, input, 16) != 0) {
+        printf("Invalid input value!\n");
+        goto cleanup;
+    }
+
+    if (mpz_set_str(bint_modulus, modulus, 16) != 0 || mpz_cmp_ui(bint_modulus, 0) <= 0) {
+        printf("Invalid modulus value!\n");
+        goto cleanup;
+    }
+
+    // Set expected value (assume decimal format)
+    if (mpz_set_str(bint_expected, expected, 10) != 0) {
+        printf("Invalid expected output value!\n");
+        goto cleanup;
+    }
+
+    // Perform modulus operation: result = input % modulus
+    mpz_mod(result, bint_input, bint_modulus);
+
+    // Print debug information
+    printf("Input: ");
+    gmp_printf("%Zd\n", bint_input);
+
+    printf("Modulus: ");
+    gmp_printf("%Zd\n", bint_modulus);
+
+    printf("Expected Output (decimal): ");
+    gmp_printf("%Zd\n", bint_expected);
+
+    printf("Result (decimal): ");
+    gmp_printf("%Zd\n", result);
+
+    // Compare result with expected output
+    if (mpz_cmp(result, bint_expected) == 0) {
+        match = true;
+    }
+
+cleanup:
+    // Clear memory
+    mpz_clears(bint_input, bint_modulus, bint_expected, result, NULL);
+    return match;
+}
+
+// Lua wrapper for check_modulus_result
+int lua_check_modulus_result(lua_State *L) {
+    // Get parameters from Lua (stack order: input, modulus, expected)
+    const char *input = luaL_checkstring(L, 1);
+    const char *modulus = luaL_checkstring(L, 2);
+    const char *expected = luaL_checkstring(L, 3);
+
+    // Call the C function
+    bool result = check_modulus_result(input, modulus, expected);
+
+    // Push the result (boolean) back to Lua
+    lua_pushboolean(L, result);
+    return 1;  // Number of return values
+}
 
   int boot_lua(lua_State *L);
   lua_State *wasm_lua_state = NULL;
@@ -28,7 +168,7 @@ extern "C"
   // This line will be injected by emcc-lua as export functions to WASM declaration
   __FUNCTION_DECLARATIONS__
 
-  // This function is for debug to see an C <-> Lua stack values
+    // This function is for debug to see an C <-> Lua stack values
   // void dumpStack(lua_State *L) {
   //   int i;
   //   int stackSize = lua_gettop(L);
@@ -141,6 +281,11 @@ extern "C"
   {
     luaL_openlibs(L);
 
+    // luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
+    // lua_pushcfunction(L, luaopen_mylib);
+    // lua_setfield(L, -2, "mylib");
+    // lua_pop(L, 1);  // remove PRELOAD table
+
     if (luaL_loadbuffer(L, (const char *)program, sizeof(program), "main"))
     {
       fprintf(stderr, "error on luaL_loadbuffer()\n");
@@ -149,6 +294,9 @@ extern "C"
     lua_newtable(L);
     lua_pushlstring(L, (const char *)lua_main_program, sizeof(lua_main_program));
     lua_setfield(L, -2, "__lua_webassembly__");
+
+    lua_register(wasm_lua_state, "compute_mod_exp", lua_compute_mod_exp);
+    lua_register(wasm_lua_state, "check_modulus_result", lua_check_modulus_result);
 
     // This place will be injected by emcc-lua
     __INJECT_LUA_FILES__
