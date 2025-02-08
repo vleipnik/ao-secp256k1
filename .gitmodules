@@ -1,3 +1,6 @@
 [submodule "dev-cli/container/src/secp256k1"]
 	path = dev-cli/container/src/secp256k1
 	url = git@github.com:bitcoin-core/secp256k1.git
+[submodule "dev-cli/container/src/gmp-wasm"]
+	path = dev-cli/container/src/gmp-wasm
+	url = git@github.com:erigontech/gmp-wasm.git
